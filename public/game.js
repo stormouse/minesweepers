@@ -1,8 +1,8 @@
 'use strict';
 
-const GRID_W = 16;
-const GRID_H = 16;
-const MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.15);
+const GRID_W = 48;
+const GRID_H = 30;
+const MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.17);
 let CELL = 14; // px per cell — recalculated on start/resize
 
 function calcCellSize() {
@@ -139,33 +139,10 @@ function renderPlayerList() {
 }
 
 function computePlayerTerritories() {
-  const eliminatedIds = new Set(players.filter(p => p.eliminated).map(p => p.id));
   playerTerritories.clear();
-
-  // One ownership slot per cell — first player (by players[] order) wins contested cells
-  const ownership = new Array(GRID_W * GRID_H).fill(null);
-
   for (const p of players) {
-    if (eliminatedIds.has(p.id)) continue;
-    const tSet = new Set();
-    playerTerritories.set(p.id, tSet);
-
-    for (let y = 0; y < GRID_H; y++) {
-      for (let x = 0; x < GRID_W; x++) {
-        if (grid[y][x].openedBy !== p.id) continue;
-        for (let dy = -2; dy <= 2; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H) continue;
-            const idx = ny * GRID_W + nx;
-            if (ownership[idx] === null) {
-              ownership[idx] = p.id;
-              tSet.add(`${nx},${ny}`);
-            }
-          }
-        }
-      }
-    }
+    if (p.eliminated || !p.territory) continue;
+    playerTerritories.set(p.id, new Set(p.territory));
   }
 }
 

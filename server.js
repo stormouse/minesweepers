@@ -3,9 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
-const GRID_W = 16;
-const GRID_H = 16;
-const MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.15);
+const GRID_W = 48;
+const GRID_H = 30;
+const MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.17);
 const TERRITORY_R = 2;
 const PLAYER_COLORS = ['#ff1744', '#2979ff', '#00c853', '#ff6d00'];
 const MAX_PLAYERS = 4;
@@ -188,9 +188,10 @@ function checkWin(lobby) {
   for (let y = 0; y < GRID_H; y++)
     for (let x = 0; x < GRID_W; x++) {
       const c = lobby.grid[y][x];
-      // An incorrect flag blocks the win
-      if (c.flaggedBy !== null && !c.mine) return null;
-      // A mine that hasn't been exploded or flagged blocks the win
+      if (c.flaggedBy !== null && !c.mine) {
+        const flagger = lobby.players.get(c.flaggedBy);
+        if (!flagger || !flagger.eliminated) return null;
+      }
       if (c.mine && !c.opened && c.flaggedBy === null) return null;
     }
   return 'cleared';
@@ -229,7 +230,7 @@ function serializeCell(cell) {
 function serializePlayers(lobby) {
   return [...lobby.players.values()].map(p => ({
     id: p.id, name: p.name, color: p.color, isHost: p.isHost,
-    eliminated: p.eliminated, territorySize: p.territory ? p.territory.size : 0, openedCount: p.openedSet.size,
+    eliminated: p.eliminated, territory: p.territory ? [...p.territory] : null, openedCount: p.openedSet.size,
   }));
 }
 
