@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minesweepers</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="lobby-screen">
+  <div class="lobby-box">
+    <h1>Minesweepers</h1>
+    <div class="field">
+      <input id="name-input" type="text" placeholder="Your name" maxlength="16" autocomplete="off">
+    </div>
+    <button id="create-btn" class="btn-primary">New Lobby</button>
+    <div class="divider">or join existing</div>
+    <div class="field-row">
+      <input id="code-input" type="text" placeholder="XXXX" maxlength="4" autocomplete="off" spellcheck="false">
+      <button id="join-btn">Join</button>
+    </div>
+    <div id="error-msg"></div>
+
+    <div id="lobby-waiting">
+      <div class="lobby-code-row">
+        <span>Lobby code:</span>
+        <strong id="lobby-code-display"></strong>
+        <button id="copy-btn" class="btn-small">Copy</button>
+      </div>
+      <div id="player-list"></div>
+      <button id="start-btn" class="btn-primary" style="display:none">Start Game</button>
+      <div id="waiting-msg">Waiting for host to start…</div>
+    </div>
+  </div>
+</div>
+
+<div id="game-screen">
+  <div id="sidebar">
+    <div id="mine-counter">⬛ <span id="mine-count"></span></div>
+    <div id="scoreboard"></div>
+    <div id="legend">
+      <div class="legend-row"><span class="legend-key">LMB</span> open</div>
+      <div class="legend-row"><span class="legend-key">RMB</span> flag</div>
+      <div class="legend-row"><span class="legend-key">Both</span> chord</div>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="game-canvas"></canvas>
+  </div>
+</div>
+
+<div id="overlay" style="display:none">
+  <div class="overlay-box">
+    <h2 id="overlay-title"></h2>
+    <div id="overlay-scores"></div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
