@@ -192,7 +192,9 @@ function checkWin(lobby) {
         const flagger = lobby.players.get(c.flaggedBy);
         if (!flagger || !flagger.eliminated) return null;
       }
-      if (c.mine && !c.opened && c.flaggedBy === null) return null;
+      if (c.mine && !c.opened && c.flaggedBy === null) {
+        if (active.some(p => inTerritory(p.territory, x, y))) return null;
+      }
     }
   return 'cleared';
 }
