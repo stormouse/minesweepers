@@ -30,6 +30,13 @@
         <button id="copy-btn" class="btn-small">Copy</button>
       </div>
       <div id="player-list"></div>
+      <div id="grid-config-host" style="display:none">
+        <span class="grid-config-label">Grid size</span>
+        <input id="grid-w-input" type="number" min="10" max="80" value="48">
+        <span class="grid-config-sep">×</span>
+        <input id="grid-h-input" type="number" min="8" max="50" value="30">
+      </div>
+      <div id="grid-config-display" style="display:none"></div>
       <button id="start-btn" class="btn-primary" style="display:none">Start Game</button>
       <div id="waiting-msg">Waiting for host to start…</div>
     </div>
@@ -55,6 +62,8 @@
   <div class="overlay-box">
     <h2 id="overlay-title"></h2>
     <div id="overlay-scores"></div>
+    <button id="restart-btn" class="btn-primary overlay-action" style="display:none">Play Again</button>
+    <div id="restart-waiting-msg" class="overlay-waiting" style="display:none">Waiting for host to restart…</div>
   </div>
 </div>
 

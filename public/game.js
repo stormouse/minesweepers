@@ -1,8 +1,8 @@
 'use strict';
 
-const GRID_W = 48;
-const GRID_H = 30;
-const MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.17);
+let GRID_W = 48;
+let GRID_H = 30;
+let MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.17);
 let CELL = 14; // px per cell — recalculated on start/resize
 
 function calcCellSize() {
@@ -51,8 +51,9 @@ function send(msg) {
 // ── Message dispatch ──────────────────────────────────────────────────────────
 function dispatch(msg) {
   switch (msg.type) {
-    case 'lobby_state':    onLobbyState(msg);   break;
+    case 'lobby_state':    onLobbyState(msg);    break;
     case 'players_update': onPlayersUpdate(msg); break;
+    case 'config_update':  onConfigUpdate(msg);  break;
     case 'game_start':     onGameStart(msg);     break;
     case 'update':         onUpdate(msg);        break;
     case 'game_over':      onGameOver(msg);      break;
@@ -64,9 +65,11 @@ function onLobbyState(msg) {
   myId = msg.you;
   myLobbyCode = msg.code;
   players = msg.players;
+  grid = null;
 
   lobbyScreen.style.display = 'flex';
   gameScreen.style.display  = 'none';
+  overlay.style.display     = 'none';
 
   $('lobby-code-display').textContent = msg.code;
   $('lobby-waiting').style.display    = 'flex';
@@ -75,6 +78,14 @@ function onLobbyState(msg) {
   $('start-btn').style.display   = isHost ? 'block' : 'none';
   $('waiting-msg').style.display = isHost ? 'none'  : 'block';
 
+  const gw = msg.gridW || GRID_W;
+  const gh = msg.gridH || GRID_H;
+  $('grid-config-host').style.display    = isHost ? 'flex' : 'none';
+  $('grid-config-display').style.display = isHost ? 'none' : 'block';
+  $('grid-w-input').value = gw;
+  $('grid-h-input').value = gh;
+  $('grid-config-display').textContent = `Grid: ${gw} × ${gh}`;
+
   renderPlayerList();
 }
 
@@ -82,9 +93,25 @@ function onPlayersUpdate(msg) {
   players = msg.players;
   renderPlayerList();
   if (grid) renderScoreboard();
+
+  // If overlay is showing, update restart button visibility (e.g. host transferred on disconnect)
+  if (overlay.style.display !== 'none') {
+    const isHost = players.find(p => p.id === myId)?.isHost;
+    $('restart-btn').style.display         = isHost ? 'block' : 'none';
+    $('restart-waiting-msg').style.display = isHost ? 'none'  : 'block';
+  }
+}
+
+function onConfigUpdate(msg) {
+  $('grid-w-input').value = msg.gridW;
+  $('grid-h-input').value = msg.gridH;
+  $('grid-config-display').textContent = `Grid: ${msg.gridW} × ${msg.gridH}`;
 }
 
 function onGameStart(msg) {
+  GRID_W = msg.gridW || GRID_W;
+  GRID_H = msg.gridH || GRID_H;
+  MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.17);
   grid    = msg.grid;
   players = msg.players;
 
@@ -132,6 +159,11 @@ function onGameOver(msg) {
       <span class="sval" style="color:${p.color}">${msg.scores[p.id] || 0}</span>
     </div>
   `).join('');
+
+  const isHost = players.find(p => p.id === myId)?.isHost;
+  $('restart-btn').style.display         = isHost ? 'block' : 'none';
+  $('restart-waiting-msg').style.display = isHost ? 'none'  : 'block';
+
   overlay.style.display = 'flex';
 }
 
@@ -182,12 +214,10 @@ function playerById(id) { return players.find(p => p.id === id); }
 function renderGrid() {
   if (!grid) return;
 
-  // Draw all cells
   for (let y = 0; y < GRID_H; y++)
     for (let x = 0; x < GRID_W; x++)
       drawCell(x, y);
 
-  // Draw territory contours on top
   for (const p of players) {
     if (p.eliminated) continue;
     const tSet = playerTerritories.get(p.id);
@@ -201,7 +231,6 @@ function drawCell(x, y) {
   const cx = px + CELL / 2, cy = py + CELL / 2;
 
   if (!cell.opened) {
-    // Raised bevel — classic minesweeper feel in light mode
     const base = '#b8c4dc';
     const hi   = '#dde6f8';
     const sh   = '#8898b4';
@@ -223,7 +252,6 @@ function drawCell(x, y) {
     return;
   }
 
-  // Opened cell
   if (cell.mine) {
     ctx.fillStyle = '#ffd0d0';
     ctx.fillRect(px, py, CELL, CELL);
@@ -234,11 +262,9 @@ function drawCell(x, y) {
     return;
   }
 
-  // Normal opened — inset look
   ctx.fillStyle = '#e8ecf8';
   ctx.fillRect(px, py, CELL, CELL);
 
-  // Player color tint
   if (cell.openedBy) {
     const p = playerById(cell.openedBy);
     if (p) {
@@ -247,7 +273,6 @@ function drawCell(x, y) {
     }
   }
 
-  // Subtle inset border
   ctx.strokeStyle = '#c8d0e8';
   ctx.lineWidth = 0.5;
   ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
@@ -263,7 +288,6 @@ function drawCell(x, y) {
 
 function drawFlag(cx, cy, color) {
   const r = CELL / 2 - Math.max(2, CELL * 0.15);
-  // Shadow
   ctx.shadowColor = hexAlpha(color, 0.4);
   ctx.shadowBlur  = CELL * 0.4;
   ctx.fillStyle   = color;
@@ -274,7 +298,6 @@ function drawFlag(cx, cy, color) {
   ctx.closePath();
   ctx.fill();
   ctx.shadowBlur = 0;
-  // Pole
   ctx.strokeStyle = color;
   ctx.lineWidth   = Math.max(1, CELL * 0.09);
   ctx.beginPath();
@@ -295,7 +318,6 @@ function drawMine(cx, cy) {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.shadowBlur = 0;
-  // Spikes
   ctx.strokeStyle = '#aa0011';
   ctx.lineWidth = Math.max(1, CELL * 0.09);
   for (let a = 0; a < 8; a++) {
@@ -305,7 +327,6 @@ function drawMine(cx, cy) {
     ctx.lineTo(cx + Math.cos(angle) * (r + r * 0.55), cy + Math.sin(angle) * (r + r * 0.55));
     ctx.stroke();
   }
-  // Shine
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.beginPath();
   ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.22, 0, Math.PI * 2);
@@ -433,6 +454,17 @@ $('copy-btn').addEventListener('click', () => {
   $('copy-btn').textContent = 'Copied!';
   setTimeout(() => { $('copy-btn').textContent = 'Copy'; }, 1500);
 });
+
+function sendConfig() {
+  const gw = parseInt($('grid-w-input').value) || GRID_W;
+  const gh = parseInt($('grid-h-input').value) || GRID_H;
+  send({ type: 'config', gridW: gw, gridH: gh });
+}
+
+$('grid-w-input').addEventListener('change', sendConfig);
+$('grid-h-input').addEventListener('change', sendConfig);
+
+$('restart-btn').addEventListener('click', () => send({ type: 'restart' }));
 
 // ── Resize ────────────────────────────────────────────────────────────────────
 function resizeCanvas() {

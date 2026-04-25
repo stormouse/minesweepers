@@ -3,12 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
-const GRID_W = 48;
-const GRID_H = 30;
-const MINE_COUNT = Math.floor(GRID_W * GRID_H * 0.17);
+const DEFAULT_W = 48;
+const DEFAULT_H = 30;
+const MINE_DENSITY = 0.17;
 const TERRITORY_R = 2;
 const PLAYER_COLORS = ['#ff1744', '#2979ff', '#00c853', '#ff6d00'];
 const MAX_PLAYERS = 4;
+const MIN_W = 10, MAX_W = 80;
+const MIN_H = 8,  MAX_H = 50;
 
 const lobbies = new Map();
 const clientMeta = new Map(); // ws -> { lobbyCode, playerId }
@@ -61,48 +63,48 @@ function broadcast(lobby, msg) {
 }
 
 // --- Grid ---
-function makeGrid() {
-  return Array.from({ length: GRID_H }, () =>
-    Array.from({ length: GRID_W }, () => ({ mine: false, opened: false, flaggedBy: null, openedBy: null, number: 0 }))
+function makeGrid(w, h) {
+  return Array.from({ length: h }, () =>
+    Array.from({ length: w }, () => ({ mine: false, opened: false, flaggedBy: null, openedBy: null, number: 0 }))
   );
 }
 
-function neighbors(x, y) {
+function neighbors(x, y, w, h) {
   const out = [];
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     if (!dx && !dy) continue;
     const nx = x + dx, ny = y + dy;
-    if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) out.push([nx, ny]);
+    if (nx >= 0 && nx < w && ny >= 0 && ny < h) out.push([nx, ny]);
   }
   return out;
 }
 
-function placeMines(grid, excludeSet) {
+function placeMines(grid, excludeSet, mineCount, w, h) {
   const candidates = [];
-  for (let y = 0; y < GRID_H; y++)
-    for (let x = 0; x < GRID_W; x++)
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
       if (!excludeSet.has(`${x},${y}`)) candidates.push([x, y]);
 
-  for (let i = 0; i < MINE_COUNT && i < candidates.length; i++) {
+  for (let i = 0; i < mineCount && i < candidates.length; i++) {
     const j = i + Math.floor(Math.random() * (candidates.length - i));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
     const [mx, my] = candidates[i];
     grid[my][mx].mine = true;
   }
 
-  for (let y = 0; y < GRID_H; y++)
-    for (let x = 0; x < GRID_W; x++)
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
       if (!grid[y][x].mine)
-        grid[y][x].number = neighbors(x, y).filter(([nx, ny]) => grid[ny][nx].mine).length;
+        grid[y][x].number = neighbors(x, y, w, h).filter(([nx, ny]) => grid[ny][nx].mine).length;
 }
 
 // --- Territory ---
-// Expands player.territory (Set of "x,y") to include all cells within TERRITORY_R of (x,y)
 function expandTerritory(lobby, player, x, y) {
+  const { gridW, gridH } = lobby;
   for (let dy = -TERRITORY_R; dy <= TERRITORY_R; dy++)
     for (let dx = -TERRITORY_R; dx <= TERRITORY_R; dx++) {
       const nx = x + dx, ny = y + dy;
-      if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H && !isClaimed(lobby, nx, ny, player.id))
+      if (nx >= 0 && nx < gridW && ny >= 0 && ny < gridH && !isClaimed(lobby, nx, ny, player.id))
         player.territory.add(`${nx},${ny}`);
     }
 }
@@ -111,7 +113,6 @@ function inTerritory(t, x, y) {
   return t !== null && t.has(`${x},${y}`);
 }
 
-// Returns true if (x,y) falls inside any active player's territory other than excludeId
 function isClaimed(lobby, x, y, excludeId) {
   for (const p of lobby.players.values()) {
     if (p.id === excludeId || p.eliminated) continue;
@@ -123,6 +124,7 @@ function isClaimed(lobby, x, y, excludeId) {
 // --- Game actions ---
 function doOpen(lobby, player, startX, startY) {
   const grid = lobby.grid;
+  const { gridW, gridH } = lobby;
   const changed = [];
   const queue = [[startX, startY]];
   const queued = new Set([`${startX},${startY}`]);
@@ -145,7 +147,7 @@ function doOpen(lobby, player, startX, startY) {
     }
 
     if (cell.number === 0) {
-      for (const [nx, ny] of neighbors(cx, cy)) {
+      for (const [nx, ny] of neighbors(cx, cy, gridW, gridH)) {
         const key = `${nx},${ny}`;
         if (queued.has(key)) continue;
         queued.add(key);
@@ -170,9 +172,10 @@ function doFlag(lobby, player, x, y) {
 
 function doChord(lobby, player, x, y) {
   const grid = lobby.grid;
+  const { gridW, gridH } = lobby;
   const cell = grid[y][x];
   if (!cell.opened || cell.number === 0) return [];
-  const ns = neighbors(x, y);
+  const ns = neighbors(x, y, gridW, gridH);
   const flagCount = ns.filter(([nx, ny]) => grid[ny][nx].flaggedBy !== null).length;
   if (flagCount !== cell.number) return [];
 
@@ -187,11 +190,12 @@ function doChord(lobby, player, x, y) {
 }
 
 function checkWin(lobby) {
+  const { gridW, gridH } = lobby;
   const active = [...lobby.players.values()].filter(p => !p.eliminated);
   if (active.length === 0) return 'eliminated';
 
-  for (let y = 0; y < GRID_H; y++)
-    for (let x = 0; x < GRID_W; x++) {
+  for (let y = 0; y < gridH; y++)
+    for (let x = 0; x < gridW; x++) {
       const c = lobby.grid[y][x];
       if (c.flaggedBy !== null && !c.mine) {
         const flagger = lobby.players.get(c.flaggedBy);
@@ -205,25 +209,24 @@ function checkWin(lobby) {
 }
 
 function endGame(lobby, reason) {
+  const { gridW, gridH } = lobby;
   lobby.phase = 'over';
 
-  // Calculate scores
   const scores = {};
   for (const p of lobby.players.values()) {
     const area = p.territory ? p.territory.size : 0;
     let correctFlags = 0;
-    for (let y = 0; y < GRID_H; y++)
-      for (let x = 0; x < GRID_W; x++) {
+    for (let y = 0; y < gridH; y++)
+      for (let x = 0; x < gridW; x++) {
         const c = lobby.grid[y][x];
         if (c.flaggedBy === p.id && c.mine) correctFlags++;
       }
     scores[p.id] = area + correctFlags * 2;
   }
 
-  // Collect mine positions
   const mines = [];
-  for (let y = 0; y < GRID_H; y++)
-    for (let x = 0; x < GRID_W; x++)
+  for (let y = 0; y < gridH; y++)
+    for (let x = 0; x < gridW; x++)
       if (lobby.grid[y][x].mine) mines.push({ x, y });
 
   broadcast(lobby, { type: 'game_over', reason, scores, mines, players: serializePlayers(lobby) });
@@ -244,12 +247,14 @@ function serializePlayers(lobby) {
 // --- Message handlers ---
 function handleMessage(ws, msg) {
   switch (msg.type) {
-    case 'create': return onCreate(ws, msg);
-    case 'join':   return onJoin(ws, msg);
-    case 'start':  return onStart(ws);
-    case 'open':   return onOpen(ws, msg);
-    case 'flag':   return onFlag(ws, msg);
-    case 'chord':  return onChord(ws, msg);
+    case 'create':  return onCreate(ws, msg);
+    case 'join':    return onJoin(ws, msg);
+    case 'config':  return onConfig(ws, msg);
+    case 'start':   return onStart(ws);
+    case 'restart': return onRestart(ws);
+    case 'open':    return onOpen(ws, msg);
+    case 'flag':    return onFlag(ws, msg);
+    case 'chord':   return onChord(ws, msg);
   }
 }
 
@@ -267,10 +272,10 @@ function onCreate(ws, { name }) {
   if (!name) return;
   const code = genCode();
   const player = makePlayer(ws, name, PLAYER_COLORS[0], true);
-  const lobby = { code, phase: 'lobby', players: new Map([[player.id, player]]), grid: null };
+  const lobby = { code, phase: 'lobby', players: new Map([[player.id, player]]), grid: null, gridW: DEFAULT_W, gridH: DEFAULT_H };
   lobbies.set(code, lobby);
   clientMeta.set(ws, { lobbyCode: code, playerId: player.id });
-  send(ws, { type: 'lobby_state', code, you: player.id, players: serializePlayers(lobby) });
+  send(ws, { type: 'lobby_state', code, you: player.id, gridW: DEFAULT_W, gridH: DEFAULT_H, players: serializePlayers(lobby) });
 }
 
 function onJoin(ws, { name, code }) {
@@ -286,8 +291,24 @@ function onJoin(ws, { name, code }) {
   lobby.players.set(player.id, player);
   clientMeta.set(ws, { lobbyCode: code, playerId: player.id });
 
-  send(ws, { type: 'lobby_state', code, you: player.id, players: serializePlayers(lobby) });
+  send(ws, { type: 'lobby_state', code, you: player.id, gridW: lobby.gridW, gridH: lobby.gridH, players: serializePlayers(lobby) });
   broadcast(lobby, { type: 'players_update', players: serializePlayers(lobby) });
+}
+
+function onConfig(ws, { gridW, gridH }) {
+  const meta = clientMeta.get(ws);
+  if (!meta) return;
+  const lobby = lobbies.get(meta.lobbyCode);
+  if (!lobby || lobby.phase !== 'lobby') return;
+  const player = lobby.players.get(meta.playerId);
+  if (!player || !player.isHost) return;
+
+  gridW = Math.max(MIN_W, Math.min(MAX_W, Math.round(+gridW) || DEFAULT_W));
+  gridH = Math.max(MIN_H, Math.min(MAX_H, Math.round(+gridH) || DEFAULT_H));
+  lobby.gridW = gridW;
+  lobby.gridH = gridH;
+
+  broadcast(lobby, { type: 'config_update', gridW, gridH });
 }
 
 function onStart(ws) {
@@ -298,40 +319,61 @@ function onStart(ws) {
   const player = lobby.players.get(meta.playerId);
   if (!player || !player.isHost) return;
 
+  const { gridW, gridH } = lobby;
+  const mineCount = Math.floor(gridW * gridH * MINE_DENSITY);
+
   lobby.phase = 'game';
-  lobby.grid = makeGrid();
+  lobby.grid = makeGrid(gridW, gridH);
 
   const players = [...lobby.players.values()];
   const startPos = [
-    [Math.floor(GRID_W * 0.15), Math.floor(GRID_H * 0.2)],
-    [Math.floor(GRID_W * 0.85), Math.floor(GRID_H * 0.8)],
-    [Math.floor(GRID_W * 0.85), Math.floor(GRID_H * 0.2)],
-    [Math.floor(GRID_W * 0.15), Math.floor(GRID_H * 0.8)],
+    [Math.floor(gridW * 0.15), Math.floor(gridH * 0.2)],
+    [Math.floor(gridW * 0.85), Math.floor(gridH * 0.8)],
+    [Math.floor(gridW * 0.85), Math.floor(gridH * 0.2)],
+    [Math.floor(gridW * 0.15), Math.floor(gridH * 0.8)],
   ].slice(0, players.length);
 
-  // Exclude 5x5 area around each start from mines
   const excludeSet = new Set();
   startPos.forEach(([sx, sy]) => {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
       const nx = sx + dx, ny = sy + dy;
-      if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) excludeSet.add(`${nx},${ny}`);
+      if (nx >= 0 && nx < gridW && ny >= 0 && ny < gridH) excludeSet.add(`${nx},${ny}`);
     }
   });
-  placeMines(lobby.grid, excludeSet);
+  placeMines(lobby.grid, excludeSet, mineCount, gridW, gridH);
 
-  // Pre-initialize territories so flood fills respect each other from the start
   players.forEach((p, i) => expandTerritory(lobby, p, startPos[i][0], startPos[i][1]));
 
-  // Open starting squares (flood fill may expand territory)
   const allChanged = [];
   players.forEach((p, i) => allChanged.push(...doOpen(lobby, p, startPos[i][0], startPos[i][1])));
 
-  // Build full grid snapshot (no mine positions)
-  const gridSnapshot = Array.from({ length: GRID_H }, (_, y) =>
-    Array.from({ length: GRID_W }, (_, x) => serializeCell(lobby.grid[y][x]))
+  const gridSnapshot = Array.from({ length: gridH }, (_, y) =>
+    Array.from({ length: gridW }, (_, x) => serializeCell(lobby.grid[y][x]))
   );
 
-  broadcast(lobby, { type: 'game_start', grid: gridSnapshot, players: serializePlayers(lobby) });
+  broadcast(lobby, { type: 'game_start', grid: gridSnapshot, gridW, gridH, players: serializePlayers(lobby) });
+}
+
+function onRestart(ws) {
+  const meta = clientMeta.get(ws);
+  if (!meta) return;
+  const lobby = lobbies.get(meta.lobbyCode);
+  if (!lobby || lobby.phase !== 'over') return;
+  const player = lobby.players.get(meta.playerId);
+  if (!player || !player.isHost) return;
+
+  lobby.phase = 'lobby';
+  lobby.grid = null;
+
+  for (const p of lobby.players.values()) {
+    p.eliminated = false;
+    p.openedSet = new Set();
+    p.territory = new Set();
+  }
+
+  for (const p of lobby.players.values()) {
+    send(p.ws, { type: 'lobby_state', code: lobby.code, you: p.id, gridW: lobby.gridW, gridH: lobby.gridH, players: serializePlayers(lobby) });
+  }
 }
 
 function getContext(ws) {
@@ -353,19 +395,13 @@ function onOpen(ws, { x, y }) {
   const ctx = getContext(ws);
   if (!ctx) return;
   const { lobby, player } = ctx;
-  if (x < 0 || x >= GRID_W || y < 0 || y >= GRID_H) return;
+  const { gridW, gridH } = lobby;
+  if (x < 0 || x >= gridW || y < 0 || y >= gridH) return;
   if (!inTerritory(player.territory, x, y)) return;
   if (lobby.grid[y][x].opened) return;
 
   const changed = doOpen(lobby, player, x, y);
   if (!changed.length) return;
-
-  // If player hit a mine, mark the cell as mine in the update so client knows
-  const extra = {};
-  if (player.eliminated) {
-    const mineCell = changed.find(([cx, cy]) => lobby.grid[cy][cx].mine);
-    if (mineCell) extra.explodedAt = { x: mineCell[0], y: mineCell[1] };
-  }
 
   const cells = changed.map(([cx, cy]) => {
     const c = { x: cx, y: cy, ...serializeCell(lobby.grid[cy][cx]) };
@@ -382,7 +418,8 @@ function onFlag(ws, { x, y }) {
   const ctx = getContext(ws);
   if (!ctx) return;
   const { lobby, player } = ctx;
-  if (x < 0 || x >= GRID_W || y < 0 || y >= GRID_H) return;
+  const { gridW, gridH } = lobby;
+  if (x < 0 || x >= gridW || y < 0 || y >= gridH) return;
   if (!inTerritory(player.territory, x, y)) return;
 
   if (!doFlag(lobby, player, x, y)) return;
@@ -396,7 +433,8 @@ function onChord(ws, { x, y }) {
   const ctx = getContext(ws);
   if (!ctx) return;
   const { lobby, player } = ctx;
-  if (x < 0 || x >= GRID_W || y < 0 || y >= GRID_H) return;
+  const { gridW, gridH } = lobby;
+  if (x < 0 || x >= gridW || y < 0 || y >= gridH) return;
   if (!inTerritory(player.territory, x, y)) return;
 
   const changed = doChord(lobby, player, x, y);
@@ -422,7 +460,7 @@ function handleDisconnect(ws) {
   const player = lobby.players.get(meta.playerId);
   if (!player) return;
 
-  if (lobby.phase === 'lobby') {
+  if (lobby.phase === 'lobby' || lobby.phase === 'over') {
     lobby.players.delete(meta.playerId);
     if (lobby.players.size === 0) { lobbies.delete(meta.lobbyCode); return; }
     if (player.isHost) lobby.players.values().next().value.isHost = true;

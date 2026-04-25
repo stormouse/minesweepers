@@ -169,6 +169,27 @@ button:hover {
 
 #waiting-msg { color: var(--muted); font-size: 12px; text-align: center; }
 
+#grid-config-host {
+  align-items: center;
+  display: none;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+#grid-config-host input {
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 5px 6px;
+  text-align: center;
+  width: 56px;
+}
+.grid-config-label { font-weight: 500; }
+.grid-config-sep { font-weight: 600; color: var(--text); }
+#grid-config-display { color: var(--muted); font-size: 12px; text-align: center; }
+
 /* ── Game ──────────────────────────────────────────── */
 #game-screen {
   display: none;
@@ -292,7 +313,19 @@ button:hover {
   margin-bottom: 20px;
 }
 
-#overlay-scores { display: flex; flex-direction: column; gap: 10px; }
+#overlay-scores { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+
+.overlay-action {
+  width: 100%;
+  padding: 10px;
+  font-size: 15px;
+}
+.overlay-waiting {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 14px;
+  text-align: center;
+}
 
 .overlay-score-row {
   align-items: center;
