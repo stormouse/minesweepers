@@ -14,9 +14,13 @@ const lobbies = new Map();
 const clientMeta = new Map(); // ws -> { lobbyCode, playerId }
 
 // --- HTTP: serve public/ ---
+
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const BASE = '/app/mine';
+
 const server = http.createServer((req, res) => {
-  const safePath = req.url === '/' ? '/index.html' : req.url.replace(/\.\./g, '');
+  const stripped = req.url.startsWith(BASE) ? req.url.slice(BASE.length) : req.url;
+  const safePath = (stripped === '' || stripped === '/') ? '/index.html' : stripped.replace(/\.\./g, '');
   const filePath = path.join(__dirname, 'public', safePath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
@@ -29,6 +33,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
+    if (raw.toString() === 'ping') { ws.send('pong'); return; }
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     handleMessage(ws, msg);
@@ -431,4 +436,4 @@ function handleDisconnect(ws) {
   }
 }
 
-server.listen(3000, () => console.log('Minesweepers running → http://localhost:3000'));
+server.listen(27001, () => console.log('Minesweepers running → http://localhost:27001'));

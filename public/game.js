@@ -13,8 +13,9 @@ function calcCellSize() {
 }
 
 const NUM_COLORS = ['', '#0057ff', '#00aa00', '#ff1100', '#8800ee', '#ff4400', '#00aacc', '#111', '#777'];
+const HEARTBEAT_INTERVAL = 5000; // 5s
 
-let ws, myId, myLobbyCode;
+let ws, myId, myLobbyCode, heartbeat;
 let players = [];
 let grid = null; // [y][x] = { opened, number, flaggedBy, openedBy, mine? }
 let playerTerritories = new Map(); // playerId -> Set<"x,y">
@@ -30,10 +31,17 @@ const ctx          = canvas.getContext('2d');
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen    = () => {};
-  ws.onmessage = (e) => dispatch(JSON.parse(e.data));
-  ws.onclose   = () => { $('error-msg').textContent = 'Disconnected from server.'; };
+  ws = new WebSocket(`${proto}://${location.host}${location.pathname}`);
+  ws.onopen    = () => {
+    heartbeat = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+    }, HEARTBEAT_INTERVAL);
+  };
+  ws.onmessage = (e) => {
+    if (e.data.toString() === 'pong') { return; }
+    dispatch(JSON.parse(e.data));
+  };
+  ws.onclose   = () => { $('error-msg').textContent = 'Disconnected from server.'; clearInterval(heartbeat); };
 }
 
 function send(msg) {
@@ -385,10 +393,19 @@ function cellAt(e) {
 }
 
 // ── Lobby UI ──────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  const prev_name = localStorage.getItem('previous_name');
+  if (prev_name) {
+    $('name-input').value = localStorage.getItem('previous_name');
+  }
+});
+
 $('create-btn').addEventListener('click', () => {
   const name = $('name-input').value.trim();
   if (!name) { $('error-msg').textContent = 'Enter a name.'; return; }
   $('error-msg').textContent = '';
+  localStorage.setItem('previous_name', name);
   send({ type: 'create', name });
 });
 
